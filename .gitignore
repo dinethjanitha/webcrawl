@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+*.manifest
+*.spec
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+Include/
+Lib/
+Scripts/
+share/
+pyvenv.cfg
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Environment variables
+.env
+.env.local
+*.env
+*.i
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.ipynb
+
+# Scrapy
+.scrapy/
+*.html
+*.json
+scraped-*.html
+quotes-*.html
+
+# MongoDB
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project specific
+*.html
+*.csv
+output/
+data/
+crawled_data/
