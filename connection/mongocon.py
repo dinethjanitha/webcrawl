@@ -7,15 +7,14 @@ load_dotenv("./.env")
 CONNECTION_STRING = os.getenv("CONNECTION_STRING")
 
 def mongoCon(): 
-    print(CONNECTION_STRING)
+    # Don't print sensitive connection string
     try:
         client = MongoClient(CONNECTION_STRING)
         db = client["webcrawl"]
-        
-        print("Connection success!")
+        print("MongoDB connection successful!")
         return db
     except Exception as e:
-        print("Connection fail!")
+        print("MongoDB connection failed!")
         print(e)
         return None
     
