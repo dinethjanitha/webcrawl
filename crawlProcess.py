@@ -159,7 +159,7 @@ async def summarizeUsingAgent(keywordId):
 
         llm = init_chat_model("gemini-2.5-flash", model_provider="google_genai")
 
-        prompt = f"Summarize the following and align that details with this keyword {mainKeyword}: {joinAllContent if joinAllContent else 'No text found'}"
+        prompt = f"Summarize the following and align that details with this keyword {mainKeyword} **this summarize get word crawl result so mention it in top and not top as provide text show it as crawl we summary results** (using .md style to your response): {joinAllContent if joinAllContent else 'No text found'}"
 
         print("Prompt length: ", len(prompt))
 
@@ -256,5 +256,6 @@ async def exec(keyword , domain):
         "status": "success",
         "keyword_id": str(updatedKey),
         "urls_crawled": len(urls),
+        "urls" : urls,
         "summary": finalValue
     }
