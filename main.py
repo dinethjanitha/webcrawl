@@ -56,11 +56,11 @@ def crawl():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     runner_script_path = os.path.join(base_dir, "web_crawl_runner.py")
 
-    # 🔍 Build command
+    # Build command
     command = [python_path, runner_script_path] + urls + [keywordId]
     
     print("=" * 80)
-    print("🚀 Executing command:")
+    print(" Executing command:")
     print(f"   Python: {python_path}")
     print(f"   Script: {runner_script_path}")
     print(f"   URLs ({len(urls)}):")
@@ -70,7 +70,7 @@ def crawl():
     print(f"\n   Full command: {' '.join(command)}")
     print("=" * 80)
 
-    # ✅ Run Scrapy script in a separate process
+    # Run Scrapy script in a separate process
     try:
         process = subprocess.run(
             command,
@@ -80,14 +80,14 @@ def crawl():
             timeout=300  # 5 minute timeout
         )
 
-        print("\n📤 STDOUT:")
+        print("\nSTDOUT:")
         print(process.stdout)
         
         if process.stderr:
-            print("\n⚠️ STDERR:")
+            print("\ STDERR:")
             print(process.stderr)
         
-        print(f"\n🏁 Return code: {process.returncode}")
+        print(f"\nReturn code: {process.returncode}")
 
         return {
             "status": "success" if process.returncode == 0 else "error",
