@@ -29,8 +29,8 @@ async def testTwo(keyword: Union[str,None] = None , domain: Union[str,None] = No
         keyword = "Travel Sri lanka"
 
     if not domain :
-        domain = "lk"
-    result = await exec()
+        domain = "com"
+    result = await exec(keyword , domain)
     return result
 
 @app.get("/test/{id}")

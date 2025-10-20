@@ -178,7 +178,7 @@ async def summarizeUsingAgent(keywordId):
         return None
 
 
-async def exec():
+async def exec(keyword , domain):
     """
     Complete workflow:
     1. Store keyword
@@ -191,7 +191,7 @@ async def exec():
     print("\n" + "=" * 80)
     print("STEP 1: Storing keyword")
     print("=" * 80)
-    storedKeyword = await storeKeyword("Travel Sigiriya", "lk")
+    storedKeyword = await storeKeyword(keyword, domain)
     print(f"Keyword stored with ID: {storedKeyword.inserted_id}")
 
     # Step 2: Get keyword details
