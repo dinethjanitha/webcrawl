@@ -73,4 +73,5 @@ jobs:
         with:
           app-name: 'webcrawlerapp'
           slot-name: 'Production'
+          startup-command: 'fastapi dev main.py'
           

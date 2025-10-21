@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage
 from bson.objectid import ObjectId
 from model.keyword import keyword_collection
 from model.siteData import siteDataCollection
+from model.summary import summaryCollection
 import subprocess
 import sys
 
@@ -171,6 +172,10 @@ async def summarizeUsingAgent(keywordId):
         # Print the result's content
         print("Summary generated successfully!")
         print(response.content) 
+
+        summaryData = {"keywordId" : ObjectId(keywordId) , "summary" : response.content }
+
+        await summaryCollection.insert_one(summaryData)
 
         return response.content
     except Exception as e:
