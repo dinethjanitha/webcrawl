@@ -1,4 +1,4 @@
-# AI powered Web crawl
+# AI powered Web crawler
 
 ### README Coming soon!
 
