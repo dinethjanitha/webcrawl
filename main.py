@@ -2,7 +2,7 @@ from typing import Union
 from fastapi import FastAPI , HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from crawlProcess import exec  # Assuming these are in other files
-from service.privousChats import getAllDetailsById , getAllPreviousKeywords
+from service.privousChats import getAllDetailsById , getAllPreviousKeywords , deletePreviousCrawl
 # from testdb import getKeywordAll , getKeywordById # Assuming these are in other files
 from schema.keywordSchema import Keyword , KeywordOut # Assuming these are in other files
 from schema.fullDetailsSchema import FullSchema , FullSchemaOut
@@ -176,3 +176,7 @@ def crawl():
             "urls_sent": urls,
             "keyword_id": keywordId
         }
+    
+@app.delete("/api/v1/keyword/{id}")
+async def deletePrevious(id:str):
+    return await deletePreviousCrawl(id)

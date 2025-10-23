@@ -1,5 +1,8 @@
 from model.keyword import keyword_collection
+from model.siteData import siteDataCollection
+from model.summary import summaryCollection
 from bson import ObjectId
+from fastapi.responses import JSONResponse 
 
 
 
@@ -75,3 +78,22 @@ async def getAllPreviousKeywords():
     print(result)
     return result
 
+
+
+async def deletePreviousCrawl(id):
+    try :
+        await keyword_collection.delete_many({"_id" : ObjectId(id)})
+        await siteDataCollection.delete_many({"keywordId" : ObjectId(id)})
+        await summaryCollection.delete_many({"keywordId" : ObjectId(id)})
+        
+        return JSONResponse(
+            status_code=200,
+            content={"status" : "success"}
+        )
+    except Exception as e :
+        print(e)
+        return JSONResponse(
+            status_code=400,
+            content={"status" : "fail"}
+        )
+    
