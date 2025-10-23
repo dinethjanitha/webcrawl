@@ -15,6 +15,7 @@ app = FastAPI()
 
 origins = [
     "http://localhost:3000",
+    "https://webcrawlerslt.vercel.app"
 ]
 
 app.add_middleware(
