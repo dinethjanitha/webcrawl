@@ -1,8 +1,17 @@
 from model.keyword import keyword_collection
 from bson import ObjectId
 
-aggregate = [
+
+
+
+async def getAllDetailsById(id):
+    print(id)
+    aggregate = [
     {
+        '$match': {
+            '_id': ObjectId(id)
+        }
+    }, {
         '$lookup': {
             'from': 'sitesData', 
             'localField': '_id', 
@@ -42,9 +51,6 @@ aggregate = [
     }
 ]
 
-
-async def getAllDetailsById(id):
-    print(id)
     try : 
          result = await keyword_collection.aggregate(aggregate).to_list(length=None)
     except Exception as e:
