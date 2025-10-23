@@ -1,13 +1,16 @@
 from typing import Union
-from fastapi import FastAPI
+from fastapi import FastAPI , HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from crawlProcess import exec  # Assuming these are in other files
+from service.privousChats import getAllDetailsById , getAllPreviousKeywords
 # from testdb import getKeywordAll , getKeywordById # Assuming these are in other files
-# from schema.keywordSchema import Keyword , KeywordOut # Assuming these are in other files
+from schema.keywordSchema import Keyword , KeywordOut # Assuming these are in other files
+from schema.fullDetailsSchema import FullSchema , FullSchemaOut
 import subprocess
 import os
 import sys
-
+from fastapi.responses import JSONResponse
+from bson import ObjectId
 app = FastAPI()
 
 origins = [
@@ -37,14 +40,58 @@ def test():
 #     data = await getKeywordById()
 #     return data
 
+@app.get("/api/v1/keyword/full" , response_model=FullSchemaOut)
+async def fullDetails(keyword: Union[str,None] = None):
+
+    if not keyword: 
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status" : "fail",
+                "message" : "keyword id is required"
+            }
+        )
+    
+    try :
+        ObjectKeywordID = ObjectId(keyword)
+    except : 
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status" : "fail",
+                "message" : "provide valid object id"
+            }
+        )
+    result = await getAllDetailsById(ObjectKeywordID)
+    # print(result)
+    if not result : 
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status" : "fail",
+                "message" : "something wrong"
+            }
+        )
+    return result
+
+@app.get("/api/v1/keyword/all" , response_model=list[KeywordOut])
+async def getAllKeywords():
+    result = await getAllPreviousKeywords()
+    # if not result :
+    #     return JSONResponse(
+    #         status_code=404,
+    #         content="previous keywords not found"
+    #     )
+    return result
+
 @app.get("/api/v1/crawl")
 async def testTwo(keyword: Union[str,None] = None , domain: Union[str,None] = None):
     if not keyword:
         keyword = "Travel Sri lanka"
-
     if not domain :
         domain = "com"
-    result = await exec(keyword , domain)
+    result = await exec(keyword , domain)   
+
     return result
 
 @app.get("/test/{id}")
