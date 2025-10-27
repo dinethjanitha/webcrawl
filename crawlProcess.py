@@ -7,16 +7,113 @@ from googlesearchmethod.googlesearch import googlesearch
 # from pydispatch import dispatcher
 from dotenv import load_dotenv
 import os
+from fastapi import HTTPException
+from langchain.prompts import PromptTemplate
 from langchain.chat_models import init_chat_model
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
+from langchain.tools import tool
+from langchain.agents import create_structured_chat_agent , AgentExecutor
+
 from bson.objectid import ObjectId
 from model.keyword import keyword_collection
 from model.siteData import siteDataCollection
 from model.summary import summaryCollection
+
 import subprocess
 import sys
+import json
+import re
 
 load_dotenv("./env")
+
+llm = init_chat_model("gemini-2.5-flash", model_provider="google_genai")
+
+@tool
+async def getCrawlContent(keywordId:str) -> str:
+    
+    """Fetch crawl text data by keyword ID (string). Returns all combined text content for that keyword."""
+
+    siteDataResults = await siteDataCollection.find({'keywordId' : ObjectId(keywordId)}).to_list(length=None)
+    
+    content = []
+    for document in siteDataResults:
+        content.append(document['content'])
+    print("content")
+    print(len(content))
+    if len(content) > 0 :
+        joinAllContent = "".join(content)
+        print(f"Total content length: {len(joinAllContent)} characters")
+        return joinAllContent
+    else :
+        return ""
+    
+
+@tool
+def createKG(content:str) -> object:
+    """After get crawl content create Knowledge Graph and return Knowledge Graph JSON format """
+
+    from langchain.prompts import PromptTemplate
+
+    prompt_template = """
+    You are an expert in extracting structured knowledge from text.
+
+    Input: {crawl_text}
+
+    Task:
+    - Identify all entities mentioned in the text.
+    - Identify relationships between entities.
+    - Output ONLY valid JSON in the following format:
+
+    {{
+    "entities": [
+        {{"label": "<EntityType>", "properties": {{"name": "<EntityName>", "other_property": "value"}}}}
+    ],
+    "relationships": [
+        {{"from": "<EntityName>", "type": "<RelationType>", "to": "<EntityName>", "properties": {{}}}}
+    ]
+    }}
+
+    """
+    prompt = PromptTemplate.from_template(prompt_template)
+
+    full_prompt = prompt.format_prompt(
+        crawl_text=content
+    )
+
+    try:
+        llm_response = llm.invoke(full_prompt)
+    
+        clean_text = re.sub(r"^```json\s*|\s*```$", "", llm_response.content.strip())
+
+        json_out = json.loads(clean_text)
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=500, detail="Internal server error!")
+    
+    print(llm_response.content)
+    return json_out
+
+
+async def MyAgent():
+    SYSTEM_PROMPT = """
+    You are an intelligent agent that can gather crawl data by keyword and create knowledge graphs automatically.
+    You have access to two tools:
+    - getCrawlContent: fetches all crawl text for a given keyword ID.
+    - createKG: converts raw text into a structured knowledge graph.
+    """
+
+    tools = [getCrawlContent, createKG]
+
+    agent = create_structured_chat_agent(
+        model=llm,
+        system_prompt=SYSTEM_PROMPT,
+        tools=tools,
+    )
+
+    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+    return agent_executor
+
 
 # Stored Keyword in mongoDB
 async def storeKeyword(keyword , siteDomain):
@@ -158,7 +255,7 @@ async def summarizeUsingAgent(keywordId):
 
         openai_key = os.getenv("GOOGLE_API_KEY")
 
-        llm = init_chat_model("gemini-2.5-flash", model_provider="google_genai")
+        
 
         prompt = f"Summarize the following and align that details with this keyword {mainKeyword} **this summarize get word crawl result so mention it in top and not top as provide text show it as crawl we summary results** (using .md style to your response): {joinAllContent if joinAllContent else 'No text found'}"
 
