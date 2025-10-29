@@ -30,7 +30,7 @@ class WebCrawSpider(scrapy.Spider):
 
     def __init__(self, start_urls=None, keywordId=None, *args, **kwargs):
         super(WebCrawSpider, self).__init__(*args, **kwargs)
-        self.start_urls = ["https://slt.lk"] or ["https://slt.lk"]
+        self.start_urls = [start_urls[0]] or []
         self.keywordId = keywordId or ""
         self.client = pymongo.MongoClient(CONNECTION_STRING)
 

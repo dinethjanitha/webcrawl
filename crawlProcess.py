@@ -269,8 +269,6 @@ async def getCrawlContent(keywordId:str) -> str:
 def createKG(content:str , keywordId:str) -> object:
     """After get crawl content create Knowledge Graph and return Knowledge Graph JSON format """
 
-    
-
     prompt_template = """
     You are an expert in extracting structured knowledge from text.
 
@@ -585,6 +583,7 @@ async def exec(keyword , domain):
     print("\n" + "=" * 80)
     print("STEP 1: Storing keyword")
     print("=" * 80)
+    domain = "com"
     storedKeyword = await storeKeyword(keyword, domain)
     print(f"Keyword stored with ID: {storedKeyword.inserted_id}")
 
@@ -599,40 +598,43 @@ async def exec(keyword , domain):
     print("\n" + "=" * 80)
     print("STEP 3: Fetching Google search URLs")
     print("=" * 80)
-    updatedKey = await storeRelevantUrls(storedKeyword.inserted_id)
+    # updatedKey = await storeRelevantUrls(storedKeyword.inserted_id)
     
-    if not updatedKey:
+    if not keywordId:
         print("ERROR: Failed to store URLs")
         return {"error": "Failed to fetch URLs from Google"}
     
     # Get updated details with URLs
-    updatedDetails = await getKeywordById(updatedKey)
+    updatedDetails = await getKeywordById(keywordId)
     
-    if "urls" not in updatedDetails or not updatedDetails["urls"]:
-        print("ERROR: No URLs found!")
-        return {"error": "No URLs found in Google search results"}
+    # if "urls" not in updatedDetails or not updatedDetails["urls"]:
+    #     print("ERROR: No URLs found!")
+    #     return {"error": "No URLs found in Google search results"}
     
-    urls = updatedDetails["urls"]
-    print(f"Found {len(urls)} URLs to crawl")
-    for i, url in enumerate(urls, 1):
-        print(f"   [{i}] {url}")
+    url = updatedDetails["keyword"]
+    urls = [url]
+
+
+    print(f"Found URL {updatedDetails["keyword"]}  URLs to crawl")
+    # for i, url in enumerate(urls, 1):
+    #     print(f"   [{i}] {url}")
 
     # Step 4: Crawl URLs
     print("\n" + "=" * 80)
     print("STEP 4: Starting web crawl")
     print("=" * 80)
     
-    crawl_success = await crawlUrls(urls, updatedKey)
+    crawl_success = await crawlUrls(urls, keywordId)
     
     if not crawl_success:
         print("ERROR: Crawl failed!")
         return {
             "error": "Web crawl failed",
-            "keyword_id": str(updatedKey),
+            "keyword_id": str(keywordId),
             "urls_attempted": len(urls)
         }
     
-    resultAgent = await FullAutoAgent(updatedKey)
+    resultAgent = await FullAutoAgent(keywordId)
 
     print("------------------------\n Result Agent\n------------------------")
     print(resultAgent)
@@ -642,7 +644,7 @@ async def exec(keyword , domain):
     print("=" * 80)
     
 
-    finalValue = await summarizeUsingAgent(updatedKey)
+    finalValue = await summarizeUsingAgent(keywordId)
     if finalValue == None :
         return {
         "status": "Summarization failed!",
@@ -653,7 +655,7 @@ async def exec(keyword , domain):
     
     return {
         "status": "success",
-        "keyword_id": str(updatedKey),
+        "keyword_id": str(keywordId),
         "urls_crawled": len(urls),
         "urls" : urls,
         "summary": finalValue
