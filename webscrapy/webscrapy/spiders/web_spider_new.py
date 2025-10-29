@@ -25,7 +25,7 @@ class WebCrawSpider(scrapy.Spider):
         'RETRY_TIMES': 2,
         'LOG_LEVEL': 'INFO',
         'CLOSESPIDER_TIMEOUT': 0,
-        'CLOSESPIDER_PAGECOUNT': 100,  # Stop after 100 pages
+        'CLOSESPIDER_PAGECOUNT': 1,  # Stop after 100 pages
     }
 
     def __init__(self, start_urls=None, keywordId=None, *args, **kwargs):
