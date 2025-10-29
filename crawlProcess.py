@@ -45,9 +45,14 @@ llm = init_chat_model("gemini-2.5-flash", model_provider="google_genai")
 # Agent to access neo4j
 @tool
 def queryNeo4J(cypher_query:str) -> dict:
+    
     """Get KG from Neo4j"""
 
-    print("NeoStart")
+    print("\n" + "=" * 80)
+    print("STEP 1.*: Getting details from Neo4j...")
+    print("=" * 80)
+
+    # print("NeoStart")
     with GraphDatabase.driver(URI, auth=AUTH) as driver:
         with driver.session() as session:
             result = session.run(cypher_query)
@@ -69,7 +74,11 @@ def makeDecisionFromKG(query: str) -> str:
     Analyze the relationships, infer insights, and give a concise, logical answer.
     """
 
-    print("In here nowwww")
+    print("\n" + "=" * 80)
+    print("STEP 1.*: Making Decision From Neo4j KG...")
+    print("=" * 80)
+
+    # print("In here nowwww")
 
     response = llm.invoke([HumanMessage(content=reasoning_prompt)])
     return response.content
@@ -105,7 +114,7 @@ async def ReasoningAgent():
 
     Be clear, structured, and logical in your thought process.
     """
-
+    
 
     tools = [queryNeo4J, makeDecisionFromKG]
 
@@ -122,6 +131,10 @@ async def ReasoningAgent():
 async def test_decision(keywordId: str , user_prompt:str):
     # Initialize reasoning agent
     agent = await ReasoningAgent()
+
+    print("\n" + "=" * 80)
+    print("STEP 1: Start Agent...")
+    print("=" * 80)
 
     # Prepare user query
     user_message = f"""
@@ -158,6 +171,10 @@ async def test_decision(keywordId: str , user_prompt:str):
 
     messages_list = result.get("messages", [])
 
+    print("\n" + "=" * 80)
+    print("STEP 2: Checking Agent result...")
+    print("=" * 80)
+
     final_content = None
     if messages_list:
         # Get the last message object from the list
@@ -170,7 +187,9 @@ async def test_decision(keywordId: str , user_prompt:str):
         # print("Decision:\n", final_content[0]["text"])
 
         # Assuming 'result' is the variable holding your agent's output
-
+        print("\n" + "=" * 80)
+        print("STEP 3: Finalizing...")
+        print("=" * 80)
         try:
             # 1. Get the list of messages.
             # The output key is often 'messages', but could be 'output' or 'chat_history'.
@@ -250,6 +269,9 @@ async def getCrawlContent(keywordId:str) -> str:
     
     """Fetch crawl text data by keyword ID (string). Returns all combined text content for that keyword."""
 
+    print("\n" + "=" * 80)
+    print("STEP 5.*: Getting crawling content from database...")
+    print("=" * 80)
     siteDataResults = await siteDataCollection.find({'keywordId' : ObjectId(keywordId)}).to_list(length=None)
     
     content = []
@@ -268,6 +290,10 @@ async def getCrawlContent(keywordId:str) -> str:
 @tool
 def createKG(content:str , keywordId:str) -> object:
     """After get crawl content create Knowledge Graph and return Knowledge Graph JSON format """
+
+    print("\n" + "=" * 80)
+    print("STEP 5.*: Creating Knowledge Graph...")
+    print("=" * 80)
 
     prompt_template = """
     You are an expert in extracting structured knowledge from text.
@@ -326,6 +352,10 @@ def createKG(content:str , keywordId:str) -> object:
 
 
 def saveKGToNeo4j(keywordId: str, kg_json: dict):
+    print("\n" + "=" * 80)
+    print("STEP 5.*: Saving KG in Neo4j...")
+    print("=" * 80)
+
     with GraphDatabase.driver(URI, auth=AUTH) as driver:
         with driver.session() as session:
             try:
@@ -383,6 +413,10 @@ async def MyAgent():
 
 # Run Agent
 async def FullAutoAgent(keywordId: str):
+
+    print("\n" + "=" * 80)
+    print("STEP 5.1: Calling Agents")
+    print("=" * 80)
     agent_executor = await MyAgent()
 
     print("keywordId")
@@ -595,16 +629,20 @@ async def exec(keyword , domain):
     keywordId = resultMongo["_id"]
 
     # Step 3: Fetch Google URLs
-    print("\n" + "=" * 80)
-    print("STEP 3: Fetching Google search URLs")
-    print("=" * 80)
+    # print("\n" + "=" * 80)
+    # print("STEP 3: Fetching Google search URLs")
+    # print("=" * 80)
     # updatedKey = await storeRelevantUrls(storedKeyword.inserted_id)
     
-    if not keywordId:
-        print("ERROR: Failed to store URLs")
-        return {"error": "Failed to fetch URLs from Google"}
+    # if not keywordId:
+    #     print("ERROR: Failed to store URLs")
+    #     return {"error": "Failed to fetch URLs from Google"}
     
     # Get updated details with URLs
+
+    print("\n" + "=" * 80)
+    print("STEP 3: Checking keyword details")
+    print("=" * 80)
     updatedDetails = await getKeywordById(keywordId)
     
     # if "urls" not in updatedDetails or not updatedDetails["urls"]:
@@ -634,13 +672,18 @@ async def exec(keyword , domain):
             "urls_attempted": len(urls)
         }
     
+
+    print("\n" + "=" * 80)
+    print("STEP 5: Start Agentic AI")
+    print("=" * 80)
+
     resultAgent = await FullAutoAgent(keywordId)
 
     print("------------------------\n Result Agent\n------------------------")
     print(resultAgent)
     # Step 5: Summarize (only if crawl succeeded)
     print("\n" + "=" * 80)
-    print("STEP 5: Generating AI summary")
+    print("STEP 6: Generating AI summary")
     print("=" * 80)
     
 
