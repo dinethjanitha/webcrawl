@@ -1,7 +1,7 @@
 from typing import Union
 from fastapi import FastAPI , HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from crawlProcess import exec  # Assuming these are in other files
+from crawlProcess import exec ,test_decision  # Assuming these are in other files
 from service.privousChats import getAllDetailsById , getAllPreviousKeywords , deletePreviousCrawl
 # from testdb import getKeywordAll , getKeywordById # Assuming these are in other files
 from schema.keywordSchema import Keyword , KeywordOut # Assuming these are in other files
@@ -92,6 +92,13 @@ async def testTwo(keyword: Union[str,None] = None , domain: Union[str,None] = No
     if not domain :
         domain = "com"
     result = await exec(keyword , domain)   
+
+    return result
+
+@app.get("/api/v1/dicission")
+async def testDesi(keywordId:str , user_prompt:str):
+    
+    result = await test_decision(keywordId, user_prompt)   
 
     return result
 
