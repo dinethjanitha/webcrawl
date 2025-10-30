@@ -25,15 +25,18 @@ class WebCrawSpider(scrapy.Spider):
         'RETRY_TIMES': 2,
         'LOG_LEVEL': 'INFO',
         'CLOSESPIDER_TIMEOUT': 0,
-        'CLOSESPIDER_PAGECOUNT': 1,  # Stop after 100 pages
+        'CLOSESPIDER_PAGECOUNT': 5,  # Stop after 100 pages
     }
 
     def __init__(self, start_urls=None, keywordId=None, *args, **kwargs):
         super(WebCrawSpider, self).__init__(*args, **kwargs)
+
+        if not start_urls[0].startswith("https://"):
+            start_urls[0] = "https://" + start_urls[0]
+
         self.start_urls = [start_urls[0]] or []
         self.keywordId = keywordId or ""
         self.client = pymongo.MongoClient(CONNECTION_STRING)
-
         self.db = self.client['webcrawl']
         self.collection = self.db['sitesData']
         

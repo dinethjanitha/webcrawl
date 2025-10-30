@@ -7,6 +7,7 @@ from googlesearchmethod.googlesearch import googlesearch
 # from pydispatch import dispatcher
 from dotenv import load_dotenv
 import os
+from urllib.parse import urlparse , urlunparse
 
 from fastapi import HTTPException
 
@@ -86,34 +87,72 @@ def makeDecisionFromKG(query: str) -> str:
 
 async def ReasoningAgent():
     SYSTEM_PROMPT = """
-    You are an intelligent AI reasoning agent connected to a Neo4j Knowledge Graph.
-    You can:
-    - Generate Cypher queries to retrieve relevant graph data (using fuzzy search where appropriate)
-    - Analyze the graph results and make logical or data-driven decisions based on them.
+You are an intelligent AI reasoning agent connected to a Neo4j Knowledge Graph.
+Your capabilities:
+- Discover schema elements (labels, relationship types, property keys) when the user doesn't know exact KG keywords.
+- Generate Cypher queries that use fuzzy/partial matching to find relevant nodes and relationships.
+- Analyze query results and make decisions or summaries using the tool `makeDecisionFromKG`.
 
-    You have access to these tools:
-    1. queryNeo4J(query: str) — Execute Cypher queries on Neo4j and return results.
-    2. makeDecisionFromKG(data: dict) — Analyze Neo4j query results and make a decision or summary.
+Tools available:
+1. queryNeo4J(query: str) — Execute Cypher queries on Neo4j and return results.
+2. makeDecisionFromKG(data: dict) — Analyze Neo4j query results and make a decision or summary.
 
-    Rules:
-    - Always first use `queryNeo4J` to gather information before making any decision.
-    - When forming Cypher queries:
-        - Use fuzzy or partial matching (`CONTAINS`, `toLower()`, or regex `=~ '(?i).*<term>.*'`)
-        - Match node and relationship names exactly as defined in the KG schema.
-        - Never hallucinate labels or relationships that are not in the schema.
-    - After retrieving data, use `makeDecisionFromKG` to interpret the results, summarize insights, or provide reasoning.
-    - If the question cannot be answered from the graph, say so clearly.
+High-level rules:
+- Always start by discovering schema candidates relevant to the user's query (labels, relationship types, property keys) before issuing content queries.
+- NEVER hallucinate labels, relationship types, or properties that are not discoverable in the graph. Use actual results from Neo4j to decide.
+- Prefer safe, read-only Cypher (MATCH, RETURN, CALL db.*) unless explicitly asked to write.
+- Use fuzzy matching (`CONTAINS`, `toLower()`, or case-insensitive regex) when matching user terms to schema elements or data values.
+- If no matches are found, report that clearly and provide suggested alternative search terms, synonyms, or explain how the user could rephrase.
 
-    Example reasoning flow:
-    User: "What packages does SLT Mobitel offer?"
-    → Step 1: Use `queryNeo4J` with:
-        MATCH (c:Company)-[:HAS]->(p:Package)
-        WHERE toLower(c.name) CONTAINS toLower("slt mobitel")
-        RETURN p.name, p.price
-    → Step 2: Use `makeDecisionFromKG` to analyze results and summarize.
+Schema-discovery queries (Neo4j-native):
+- List all relationship types:
+  CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType;
+- List all labels:
+  CALL db.labels() YIELD label RETURN label;
+- List all property keys:
+  CALL db.propertyKeys() YIELD propertyKey RETURN propertyKey;
 
-    Be clear, structured, and logical in your thought process.
-    """
+Fuzzy-search templates (replace <term>):
+- Find relationship types matching a user term:
+  MATCH ()-[r]-()
+  WHERE toLower(type(r)) CONTAINS toLower('<term>')
+  RETURN DISTINCT type(r) AS relType, count(r) AS occurrences
+  ORDER BY occurrences DESC;
+- Find labels that match a user term:
+  CALL db.labels() YIELD label
+  WHERE toLower(label) CONTAINS toLower('<term>')
+  RETURN label;
+- Find nodes whose properties match a user term:
+  MATCH (n)
+  WHERE any(k IN keys(n) WHERE toString(n[k]) =~ '(?i).*<term>.*')
+  RETURN labels(n) AS labels, n AS node, size(keys(n)) AS propertyCount;
+
+Once a candidate relationship or label is found, fetch content nodes:
+MATCH (a)-[r:`<relationship>`]->(b)
+RETURN labels(a) AS fromLabels, a.name AS fromName,
+       type(r) AS rel,
+       labels(b) AS toLabels, b.name AS toName;
+
+When you find candidate relationship types or labels:
+- Return a short ranked list of best matches (relType or label, count of occurrences).
+- Automatically run a follow-up content query on the top candidates and summarize results using `makeDecisionFromKG`.
+
+Fallback behavior:
+- If no schema or data matches are found for the user term:
+  - Return: "No matching labels or relationship types found for '<term>' in the knowledge graph."
+  - Provide 2–4 suggested synonyms or alternate search terms the user might try.
+  - Suggest an explicit schema-discovery run (CALL db.* queries) if permitted by the user.
+
+Safety and precision:
+- Always put the user term into safe, parameterized Cypher or escape user input properly to avoid syntax issues.
+- Prefer `toLower(... ) CONTAINS toLower(...)` for robust partial matching. Use regex `=~ '(?i).*term.*'` only when needed.
+
+Response style:
+- Be clear, structured, and logical.
+- For schema discovery steps, show the query used and the succinct ranked results (up to 5 candidates).
+- For content queries, summarize findings and pass the raw results to `makeDecisionFromKG` for final interpretation.
+"""
+
     
 
     tools = [queryNeo4J, makeDecisionFromKG]
@@ -466,6 +505,26 @@ async def getKeywordById(id):
         return None    
     return result
 
+# Get details with keyword name
+async def getKeywordByDomain(url):
+    try:
+        if not url.startswith(("http://", "https://")):
+            url = "http://" + url
+
+        parsed_url = urlparse(url)
+        domain = parsed_url.netloc.replace("www.", "")
+
+        result = await keyword_collection.find_one(
+            {"keyword": {"$regex": domain, "$options": "i"}}
+        )
+
+        return result
+        
+    except Exception as e:
+        print(e)
+        return None    
+    return result
+
 
 # Add urls to keyword document
 async def storeRelevantUrls(keywordId):
@@ -604,7 +663,7 @@ async def summarizeUsingAgent(keywordId):
         return None
 
 
-async def exec(keyword , domain):
+async def exec(keyword):
     """
     Complete workflow:
     1. Store keyword
@@ -613,19 +672,32 @@ async def exec(keyword , domain):
     4. Summarize content (only if crawl succeeds)
     """
     
-    # Step 1: Store keyword
+    # Step 1: Store keyword or add it to existing keyword
     print("\n" + "=" * 80)
-    print("STEP 1: Storing keyword")
+    print("STEP 1.1: Check keyword")
     print("=" * 80)
-    domain = "com"
-    storedKeyword = await storeKeyword(keyword, domain)
-    print(f"Keyword stored with ID: {storedKeyword.inserted_id}")
+    
+    result = await getKeywordByDomain(keyword)
+
+    if not result : 
+        print("\n" + "=" * 80)
+        print("STEP 1.2: Storing keyword")
+        print("=" * 80)
+        domain = "com"
+        storedKeyword = await storeKeyword(keyword, domain)
+        storedKeywordId = storedKeyword.inserted_id
+        print(f"Keyword stored with ID: {storedKeywordId}")
+    else : 
+        print("Id is founded!")
+        print(result["_id"])
+        storedKeywordId = result["_id"]
+        print("Keyword Already founded! Skip creating new keyword id...")
 
     # Step 2: Get keyword details
     print("\n" + "=" * 80)
     print("STEP 2: Fetching keyword details")
     print("=" * 80)
-    resultMongo = await getKeywordById(storedKeyword.inserted_id)
+    resultMongo = await getKeywordById(storedKeywordId)
     keywordId = resultMongo["_id"]
 
     # Step 3: Fetch Google URLs
