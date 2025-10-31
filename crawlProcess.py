@@ -87,73 +87,71 @@ def makeDecisionFromKG(query: str) -> str:
 
 async def ReasoningAgent():
     SYSTEM_PROMPT = """
-You are an intelligent AI reasoning agent connected to a Neo4j Knowledge Graph.
-Your capabilities:
-- Discover schema elements (labels, relationship types, property keys) when the user doesn't know exact KG keywords.
-- Generate Cypher queries that use fuzzy/partial matching to find relevant nodes and relationships.
-- Analyze query results and make decisions or summaries using the tool `makeDecisionFromKG`.
+    You are an intelligent AI reasoning agent connected to a Neo4j Knowledge Graph.
+    Your capabilities:
+    - Discover schema elements (labels, relationship types, property keys) when the user doesn't know exact KG keywords.
+    - Generate Cypher queries that use fuzzy/partial matching to find relevant nodes and relationships.
+    - Analyze query results and make decisions or summaries using the tool `makeDecisionFromKG`.
 
-Tools available:
-1. queryNeo4J(query: str) — Execute Cypher queries on Neo4j and return results.
-2. makeDecisionFromKG(data: dict) — Analyze Neo4j query results and make a decision or summary.
+    Tools available:
+    1. queryNeo4J(query: str) — Execute Cypher queries on Neo4j and return results.
+    2. makeDecisionFromKG(data: dict) — Analyze Neo4j query results and make a decision or summary.
 
-High-level rules:
-- Always start by discovering schema candidates relevant to the user's query (labels, relationship types, property keys) before issuing content queries.
-- NEVER hallucinate labels, relationship types, or properties that are not discoverable in the graph. Use actual results from Neo4j to decide.
-- Prefer safe, read-only Cypher (MATCH, RETURN, CALL db.*) unless explicitly asked to write.
-- Use fuzzy matching (`CONTAINS`, `toLower()`, or case-insensitive regex) when matching user terms to schema elements or data values.
-- If no matches are found, report that clearly and provide suggested alternative search terms, synonyms, or explain how the user could rephrase.
+    High-level rules:
+    - Always start by discovering schema candidates relevant to the user's query (labels, relationship types, property keys) before issuing content queries.
+    - NEVER hallucinate labels, relationship types, or properties that are not discoverable in the graph. Use actual results from Neo4j to decide.
+    - Prefer safe, read-only Cypher (MATCH, RETURN, CALL db.*) unless explicitly asked to write.
+    - Use fuzzy matching (`CONTAINS`, `toLower()`, or case-insensitive regex) when matching user terms to schema elements or data values.
+    - If no matches are found, report that clearly and provide suggested alternative search terms, synonyms, or explain how the user could rephrase.
 
-Schema-discovery queries (Neo4j-native):
-- List all relationship types:
-  CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType;
-- List all labels:
-  CALL db.labels() YIELD label RETURN label;
-- List all property keys:
-  CALL db.propertyKeys() YIELD propertyKey RETURN propertyKey;
+    Schema-discovery queries (Neo4j-native):
+    - List all relationship types:
+    CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType;
+    - List all labels:
+    CALL db.labels() YIELD label RETURN label;
+    - List all property keys:
+    CALL db.propertyKeys() YIELD propertyKey RETURN propertyKey;
 
-Fuzzy-search templates (replace <term>):
-- Find relationship types matching a user term:
-  MATCH ()-[r]-()
-  WHERE toLower(type(r)) CONTAINS toLower('<term>')
-  RETURN DISTINCT type(r) AS relType, count(r) AS occurrences
-  ORDER BY occurrences DESC;
-- Find labels that match a user term:
-  CALL db.labels() YIELD label
-  WHERE toLower(label) CONTAINS toLower('<term>')
-  RETURN label;
-- Find nodes whose properties match a user term:
-  MATCH (n)
-  WHERE any(k IN keys(n) WHERE toString(n[k]) =~ '(?i).*<term>.*')
-  RETURN labels(n) AS labels, n AS node, size(keys(n)) AS propertyCount;
+    Fuzzy-search templates (replace <term>):
+    - Find relationship types matching a user term:
+    MATCH ()-[r]-()
+    WHERE toLower(type(r)) CONTAINS toLower('<term>')
+    RETURN DISTINCT type(r) AS relType, count(r) AS occurrences
+    ORDER BY occurrences DESC;
+    - Find labels that match a user term:
+    CALL db.labels() YIELD label
+    WHERE toLower(label) CONTAINS toLower('<term>')
+    RETURN label;
+    - Find nodes whose properties match a user term:
+    MATCH (n)
+    WHERE any(k IN keys(n) WHERE toString(n[k]) =~ '(?i).*<term>.*')
+    RETURN labels(n) AS labels, n AS node, size(keys(n)) AS propertyCount;
 
-Once a candidate relationship or label is found, fetch content nodes:
-MATCH (a)-[r:`<relationship>`]->(b)
-RETURN labels(a) AS fromLabels, a.name AS fromName,
-       type(r) AS rel,
-       labels(b) AS toLabels, b.name AS toName;
+    Once a candidate relationship or label is found, fetch content nodes:
+    MATCH (a)-[r:`<relationship>`]->(b)
+    RETURN labels(a) AS fromLabels, a.name AS fromName,
+        type(r) AS rel,
+        labels(b) AS toLabels, b.name AS toName;
 
-When you find candidate relationship types or labels:
-- Return a short ranked list of best matches (relType or label, count of occurrences).
-- Automatically run a follow-up content query on the top candidates and summarize results using `makeDecisionFromKG`.
+    When you find candidate relationship types or labels:
+    - Return a short ranked list of best matches (relType or label, count of occurrences).
+    - Automatically run a follow-up content query on the top candidates and summarize results using `makeDecisionFromKG`.
 
-Fallback behavior:
-- If no schema or data matches are found for the user term:
-  - Return: "No matching labels or relationship types found for '<term>' in the knowledge graph."
-  - Provide 2–4 suggested synonyms or alternate search terms the user might try.
-  - Suggest an explicit schema-discovery run (CALL db.* queries) if permitted by the user.
+    Fallback behavior:
+    - If no schema or data matches are found for the user term:
+    - Return: "No matching labels or relationship types found for '<term>' in the knowledge graph."
+    - Provide 2–4 suggested synonyms or alternate search terms the user might try.
+    - Suggest an explicit schema-discovery run (CALL db.* queries) if permitted by the user.
 
-Safety and precision:
-- Always put the user term into safe, parameterized Cypher or escape user input properly to avoid syntax issues.
-- Prefer `toLower(... ) CONTAINS toLower(...)` for robust partial matching. Use regex `=~ '(?i).*term.*'` only when needed.
+    Safety and precision:
+    - Always put the user term into safe, parameterized Cypher or escape user input properly to avoid syntax issues.
+    - Prefer `toLower(... ) CONTAINS toLower(...)` for robust partial matching. Use regex `=~ '(?i).*term.*'` only when needed.
 
-Response style:
-- Be clear, structured, and logical.
-- For schema discovery steps, show the query used and the succinct ranked results (up to 5 candidates).
-- For content queries, summarize findings and pass the raw results to `makeDecisionFromKG` for final interpretation.
-"""
-
-    
+    Response style:
+    - Be clear, structured, and logical.
+    - For schema discovery steps, show the query used and the succinct ranked results (up to 5 candidates).
+    - For content queries, summarize findings and pass the raw results to `makeDecisionFromKG` for final interpretation.
+    """
 
     tools = [queryNeo4J, makeDecisionFromKG]
 
@@ -162,8 +160,6 @@ Response style:
         system_prompt=SYSTEM_PROMPT,
         tools=tools,
     )
-
-    
     return agent
 
 
@@ -194,8 +190,10 @@ async def test_decision(keywordId: str , user_prompt:str):
     Output Format: Provide the final response, including the analysis and decision, in Markdown (.md) format.
     """
 
-    print(user_message)
+    # print(user_message)
     # Call the agent
+    print("Generating Cypher Query for access knowledge graph... ")
+
     result = await agent.ainvoke({
         "messages": [
             {"role": "user", "content": improved_user_message}
@@ -225,7 +223,6 @@ async def test_decision(keywordId: str , user_prompt:str):
         
         # print("Decision:\n", final_content[0]["text"])
 
-        # Assuming 'result' is the variable holding your agent's output
         print("\n" + "=" * 80)
         print("STEP 3: Finalizing...")
         print("=" * 80)
@@ -253,17 +250,13 @@ async def test_decision(keywordId: str , user_prompt:str):
                 final_text = ""
                 
                 # 4. Check the type of content and extract text
-                
-                # --- This handles the format from your last example ---
                 if isinstance(content, list) and content:
                     # It's a list, get the 'text' from the first dictionary
                     final_text = content[0].get('text', 'No "text" key found in content dict')
                 
-                # --- This handles a simple string response ---
                 elif isinstance(content, str):
                     final_text = content
                 
-                # --- This handles other unexpected formats ---
                 else:
                     final_text = str(content) # Convert to string as a fallback
 
@@ -374,7 +367,7 @@ def createKG(content:str , keywordId:str) -> object:
     )
 
     try:
-        print("Exe hereeeeeeeeeeeeeeeeee")
+        print("Generating JSON schema for create knowledge graph... ")
         llm_response = llm.invoke(full_prompt)
     
         clean_text = re.sub(r"^```json\s*|\s*```$", "", llm_response.content.strip())
