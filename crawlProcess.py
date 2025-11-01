@@ -656,7 +656,7 @@ async def summarizeUsingAgent(keywordId):
         return None
 
 
-async def exec(keyword):
+async def exec(keyword , domain):
     """
     Complete workflow:
     1. Store keyword
