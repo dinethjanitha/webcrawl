@@ -4,6 +4,9 @@ from model.summary import summaryCollection
 from bson import ObjectId
 from fastapi.responses import JSONResponse 
 
+# Import ChromaDB cleanup function
+from crawlProcess import deleteKGFromChromaDB
+
 
 
 
@@ -80,18 +83,22 @@ async def getAllPreviousKeywords():
 
 async def deletePreviousCrawl(id):
     try :
+        # Delete from MongoDB
         await keyword_collection.delete_many({"_id" : ObjectId(id)})
         await siteDataCollection.delete_many({"keywordId" : ObjectId(id)})
         await summaryCollection.delete_many({"keywordId" : ObjectId(id)})
         
+        # Delete from ChromaDB
+        deleteKGFromChromaDB(id)
+        
         return JSONResponse(
             status_code=200,
-            content={"status" : "success"}
+            content={"status" : "success", "message": "Deleted from MongoDB and ChromaDB"}
         )
     except Exception as e :
         print(e)
         return JSONResponse(
             status_code=400,
-            content={"status" : "fail"}
+            content={"status" : "fail", "error": str(e)}
         )
     

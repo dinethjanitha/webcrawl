@@ -1,7 +1,7 @@
 from typing import Union
 from fastapi import FastAPI , HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from crawlProcess import exec ,test_decision  # Assuming these are in other files
+from crawlProcess import exec, test_decision, fast_query  # Added fast_query
 from service.privousChats import getAllDetailsById , getAllPreviousKeywords , deletePreviousCrawl
 # from testdb import getKeywordAll , getKeywordById # Assuming these are in other files
 from schema.keywordSchema import Keyword , KeywordOut # Assuming these are in other files
@@ -98,12 +98,28 @@ async def testTwo(keyword: str, url_list: list[str]):
 
     return result
 
-@app.get("/api/v1/dicission")
+@app.get("/api/v1/query")
 async def testDesi(keywordId:str , user_prompt:str):
     
     result = await test_decision(keywordId, user_prompt)   
 
     return result
+
+
+# ⚡ FAST endpoint - 3-5x faster than /dicission
+@app.get("/api/v1/dicission")
+async def fastQuery(keywordId: str, user_prompt: str):
+    """
+    Fast query endpoint - bypasses agent for speed.
+    Use this for quick Q&A on crawled content.
+    """
+    result = await fast_query(keywordId, user_prompt)
+    return {
+                    "status" : "success",
+                    "message" : result
+                }
+
+
 
 @app.get("/test/{id}")
 def read(id:int , q: Union[str,None] = None):
