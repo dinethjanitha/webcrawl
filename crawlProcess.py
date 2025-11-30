@@ -29,6 +29,7 @@ from model.summary import summaryCollection
 import chromadb
 from chromadb.config import Settings
 
+from service.vector_embedding import generate_embeddings
 
 import subprocess
 import sys
@@ -38,13 +39,18 @@ import asyncio
 
 load_dotenv("./env")
 
+CHROMA_KEY = os.getenv("CHROMA_API_KEY")
 # Initialize ChromaDB client (persistent storage)
-CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_db")
-chroma_client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
+# CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_db")
+chroma_client = chromadb.CloudClient(
+  api_key=CHROMA_KEY,
+  tenant='43f271a6-f843-4f7c-99ff-8e69900c3341',
+  database='Development'
+)
 
 # Get or create collection for knowledge graph data
 kg_collection = chroma_client.get_or_create_collection(
-    name="knowledge_graph",
+    name="web_chats",
     metadata={"description": "Web crawl content storage for semantic search"}
 )
 
@@ -145,80 +151,129 @@ def getErrorSummary():
         "all_errors": error_log
     }
 
+import hashlib
 
-# Simple content storage for ChromaDB (no complex KG extraction needed)
-def saveContentToChromaDB(keywordId: str, content: str, source_urls: list = None):
+def hash_text(text: str) -> str:
+    """Generate SHA256 hash for deduplication"""
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def semantic_chunk(text: str, max_size=1200, overlap=150):
     """
-    Save crawled content directly to ChromaDB for semantic search.
-    No complex KG extraction - ChromaDB handles embedding automatically.
+    Recursive character-based semantic chunking.
+    - max_size: ~1000-1500 chars best for RAG
+    - overlap: 100-200 chars for context retention
     """
+
+    # Normalize whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    if len(text) <= max_size:
+        return [text]
+
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + max_size
+
+        # Try to split at nearest sentence boundary
+        if end < len(text):
+            period_pos = text.rfind('.', start, end)
+            if period_pos != -1:
+                end = period_pos + 1
+
+        chunk = text[start:end].strip()
+        chunks.append(chunk)
+
+        start = end - overlap  # Overlap window
+
+    return chunks
+
+
+def saveContentToChromaDB(keywordId: str, content: str, source_url: str = None):
+    """
+    Production RAG ingestion:
+    - Semantic chunking
+    - Overlap
+    - Hash deduplication
+    - Manual vector embeddings
+    """
+
     print("\n" + "=" * 80)
-    print("STEP: Saving content to ChromaDB...")
+    print("STEP: Saving content to ChromaDB (Production Mode)")
     print("=" * 80)
-    
+
     if not content or len(content.strip()) < 10:
-        print("⚠️ Content too short, skipping")
+        print("Content too short, skipping")
         return
-    
-    content_length = len(content)
-    print(f"📊 Content length: {content_length} characters")
-    
+
     try:
-        # Split content into reasonable chunks for ChromaDB (max ~8000 chars each)
-        chunk_size = 8000
-        chunks = []
-        
-        if content_length <= chunk_size:
-            chunks = [content]
-        else:
-            # Simple sentence-aware chunking
-            sentences = re.split(r'(?<=[.!?])\s+', content)
-            current_chunk = ""
-            
-            for sentence in sentences:
-                if len(current_chunk) + len(sentence) < chunk_size:
-                    current_chunk += sentence + " "
-                else:
-                    if current_chunk:
-                        chunks.append(current_chunk.strip())
-                    current_chunk = sentence + " "
-            
-            if current_chunk:
-                chunks.append(current_chunk.strip())
-        
-        print(f"   Split into {len(chunks)} chunks")
-        
-        # Prepare documents for ChromaDB
+        # -----------------------------
+        # 1. Semantic Chunking
+        # -----------------------------
+        chunks = semantic_chunk(content, max_size=1200, overlap=150)
+        print(f"📦 Total semantic chunks generated: {len(chunks)}")
+
+        ids = []
         documents = []
         metadatas = []
-        ids = []
-        
+        vectors = []  # embeddings will go here
+
         for i, chunk in enumerate(chunks):
+            chunk_hash = hash_text(keywordId + "_" + chunk)
+
+            # Skip if this hash already exists (dedup)
+            existing = kg_collection.get(ids=[chunk_hash])
+            if existing and existing.get("documents"):
+                print(f"⏭️  Skipping duplicate chunk {i}")
+                continue
+
+            # ---------------------------------
+            # 2. Generate embedding manually
+            # ---------------------------------
+            # 👇👇👇 Replace this with YOUR embedding model
+            vector = generate_embeddings(chunk)  # <--- YOU MUST IMPLEMENT THIS
+            # Example: vector = embedding_client.embed_text(chunk)
+
+            # ---------------------------------
+            # 3. Prepare for insertion
+            # ---------------------------------
+            ids.append(chunk_hash)
             documents.append(chunk)
+            vectors.append(vector)
+
+            
             metadatas.append({
                 "keywordId": keywordId,
                 "chunk_index": i,
-                "total_chunks": len(chunks),
-                "source_urls": json.dumps(source_urls or [])
+                "source_urls": source_url,
+                "hash": chunk_hash,
+                "embedding_model": "voyage-3.5"
             })
-            ids.append(f"{keywordId}_chunk_{i}")
-        
-        # Upsert to ChromaDB
-        print(f"   🚀 Saving {len(documents)} chunks to ChromaDB...")
-        kg_collection.upsert(
-            documents=documents,
-            metadatas=metadatas,
-            ids=ids
-        )
-        
-        print(f"   ✅ Successfully saved to ChromaDB!")
-        return {"chunks_saved": len(chunks)}
-        
+
+        # ---------------------------------
+        # 4. Insert into Chroma
+        # ---------------------------------
+        if documents:
+            print(f"🚀 Saving {len(documents)} chunks into ChromaDB...")
+            kg_collection.add(
+                ids=ids,
+                documents=documents,
+                metadatas=metadatas,
+                embeddings=vectors
+            )
+            print("✅ Completed ChromaDB save!")
+        else:
+            print("🔁 No new chunks to save (all duplicates).")
+
+        return {"chunks_saved": len(documents)}
+
     except Exception as e:
-        print(f"❌ ChromaDB error: {e}")
+        print(f"Error saving to ChromaDB: {e}")
         import traceback
         traceback.print_exc()
         raise
+
 
 
 # ChromaDB Query Tool - Semantic search on stored content
@@ -247,9 +302,12 @@ def queryKnowledgeGraph(query: str, keywordId: str = None, n_results: int = 10) 
         if keywordId:
             where_filter = {"keywordId": keywordId}
         
-        # Query ChromaDB with semantic search
+        # Generate query embedding using the same model as storage
+        query_vector = generate_embeddings(query)
+        
+        # Query ChromaDB with semantic search using embedding
         results = kg_collection.query(
-            query_texts=[query],
+            query_embeddings=[query_vector],  # Use embedding instead of text
             n_results=n_results,
             where=where_filter,
             include=["documents", "metadatas", "distances"]
@@ -405,8 +463,11 @@ async def fast_query(keywordId: str, user_prompt: str) -> str:
     # Step 1: Query ChromaDB directly (fast - no LLM)
     print("📊 Step 1: Querying ChromaDB...")
     try:
+        # Generate query embedding using the same model as storage
+        query_vector = generate_embeddings(user_prompt)
+        
         results = kg_collection.query(
-            query_texts=[user_prompt],
+            query_embeddings=[query_vector],  # Use embedding instead of text
             n_results=5,
             where={"keywordId": keywordId},
             include=["documents", "metadatas", "distances"]
@@ -640,59 +701,69 @@ async def test_decision(keywordId: str , user_prompt:str):
 
 
 @tool
-async def getCrawlContent(keywordId:str) -> str:
-    
-    """Fetch crawl text data by keyword ID (string). Returns all combined text content and saves to ChromaDB for search."""
+async def getCrawlContent(keywordId: str):
+    """
+    Fetch crawl text data by keyword ID.
+    Each crawled document (URL) is saved separately to ChromaDB.
+    """
 
     print("\n" + "=" * 80)
-    print("STEP 5: Getting crawl content and saving to ChromaDB...")
+    print("STEP 5: Loading crawled pages and saving individually to ChromaDB...")
     print("=" * 80)
 
     now = datetime.utcnow()
     ten_minutes_ago = now - timedelta(minutes=6)
-    
+
+    # Fetch all relevant site data
     siteDataResults = await siteDataCollection.find({
         'keywordId': ObjectId(keywordId),
         'createdAt': {'$gte': ten_minutes_ago, '$lte': now}
     }).to_list(None)
 
-    content = []
-    source_urls = []
-    
-    for document in siteDataResults:
-        if 'content' in document and document['content']:
-            content.append(str(document['content']))
-            if 'url' in document:
-                source_urls.append(document['url'])
-    
-    print(f"📊 Found {len(content)} documents in database")
-    
-    if len(content) > 0:
-        # Join all content from all documents
-        joinAllContent = "\n\n---\n\n".join(content)
-        content_length = len(joinAllContent)
-        print(f"   Total content length: {content_length} characters")
-        print(f"   Preview (first 200 chars): {joinAllContent[:200]}...")
-        
-        # Save content directly to ChromaDB - no LLM processing needed!
-        print(f"\n🚀 Saving content to ChromaDB...")
+    print(f"📊 Found {len(siteDataResults)} documents in DB")
+
+    if not siteDataResults:
+        print("⚠️ No crawl documents found.")
+        return []
+
+    all_contents_preview = []
+
+    for doc_index, document in enumerate(siteDataResults):
+
+        content = document.get("content")
+        url = document.get("siteUrl")
+
+        if not content:
+            continue
+
+        print(f"\n--- Document {doc_index+1}/{len(siteDataResults)} ---")
+        print(f"🌐 URL: {url}")
+        print(f"📏 Raw content length: {len(content)} chars")
+
+        all_contents_preview.append(content[:200])
+
         try:
-            saveContentToChromaDB(keywordId, joinAllContent, source_urls)
-            print(f"✅ Content saved to ChromaDB successfully!")
+            saveContentToChromaDB(
+                keywordId=keywordId,
+                content=content,
+                source_url=url  # per-document metadata
+            )
+            print("Saved to ChromaDB")
         except Exception as e:
-            print(f"❌ Failed to save to ChromaDB: {str(e)}")
+            print(f"Error saving to ChromaDB: {e}")
             trackError(
                 component="getCrawlContent->saveContentToChromaDB",
                 error_type=type(e).__name__,
                 error_message=str(e),
                 keywordId=keywordId,
-                details={"content_length": content_length}
+                details={"url": url, "content_length": len(content)}
             )
-        
-        return joinAllContent
-    else:
-        print("⚠️ No content found in database")
-        return ""
+
+    return {
+        "documents_processed": len(siteDataResults),
+        "previews": all_contents_preview
+    }
+
     
 
 @tool
